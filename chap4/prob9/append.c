@@ -1,25 +1,30 @@
 #include <stdio.h>
-#include "student.h"
-int main(int argc, char* argv[])
-{
-   struct student rec;
-   char c;
-   FILE *fp1, *fp2;
-   if (argc != 3) {
-      fprintf(stderr, "How to use: %s FileName\n", argv[0]);
-      return 1;
-   }
-  fp1 = fopen(argv[1], "r");
-   if (fp1 == NULL) {
-      fprintf(stderr, "File %s Open Error\n", argv[1]);
-      return 2;
-   }
+#include <stdlib.h>
 
-   fp2 = fopen(argv[2], "a+");
-   while ((c = fgetc(fp1)) != EOF)
-      fputc(c, fp2);
+int main(int argc, char* argv[]) {
+    FILE *file1, *file2;
+    char c;
 
-   fclose(fp1);
-   fclose(fp2);
-   return 0;
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s File1 File2\n", argv[0]);
+        return 1;
+    }
+
+    file1 = fopen(argv[1], "r");
+    file2 = fopen(argv[2], "a+");
+
+    if (file1 == NULL || file2 == NULL) {
+        perror("Error opening files");
+        return 2;
+    }
+
+    while ((c = fgetc(file1)) != EOF) {
+        fputc(c, file2);
+    }
+
+    fclose(file1);
+    fclose(file2);
+
+    return 0;
 }
+
