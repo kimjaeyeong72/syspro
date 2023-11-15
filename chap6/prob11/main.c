@@ -11,44 +11,43 @@
 char type(mode_t);
 char *perm(mode_t);
 void printStat(char *, char *, struct stat *, int, int, int, int);
-void listDir(char *, int, int, int, int, int, int);
-char *quoteIfNeeded(char *, int);
+void printFullPath(char *, char *, int);
 
-int main(int argc, char **argv)
+int myls_main(int argc, char **argv)
 {
-    char *dir = ".";
-    int show_hidden = 0;
-    int show_details = 0;
-    int recursive = 0;
-    int show_permissions = 0;
-    int show_inode = 0;
-    int show_quoted = 0;
+    DIR *dp;
+    char *dir;
+    struct stat st;
+    struct dirent *d;
+    char path[BUFSIZ + 1];
+    int option_l = 0;
+    int option_a = 0;
+    int option_p = 0;
+    int option_i = 0;
+    int option_Q = 0;
 
-    for (int i = 1; i < argc; ++i)
+    
+    for (int i = 1; i < argc; i++)
     {
-        if (strcmp(argv[i], "-a") == 0)
+        if (strcmp(argv[i], "-l") == 0)
         {
-            show_hidden = 1;
+            option_l = 1;
         }
-        else if (strcmp(argv[i], "-l") == 0)
+        else if (strcmp(argv[i], "-a") == 0)
         {
-            show_details = 1;
-        }
-        else if (strcmp(argv[i], "-R") == 0)
-        {
-            recursive = 1;
+            option_a = 1;
         }
         else if (strcmp(argv[i], "-p") == 0)
         {
-            show_permissions = 1;
+            option_p = 1;
         }
         else if (strcmp(argv[i], "-i") == 0)
         {
-            show_inode = 1;
+            option_i = 1;
         }
         else if (strcmp(argv[i], "-Q") == 0)
         {
-            show_quoted = 1;
+            option_Q = 1;
         }
         else
         {
@@ -56,99 +55,141 @@ int main(int argc, char **argv)
         }
     }
 
-    listDir(dir, show_hidden, show_details, recursive, show_permissions, show_inode, show_quoted);
-
-    return 0;
-}
-
-void listDir(char *dir, int show_hidden, int show_details, int recursive, int show_permissions, int show_inode, int show_quoted)
-{
-    DIR *dp;
-    struct stat st;
-    struct dirent *d;
-    char path[BUFSIZ + 1];
+    if (dir == NULL)
+    {
+        dir = ".";
+    }
 
     if ((dp = opendir(dir)) == NULL)
     {
         perror(dir);
-        exit(EXIT_FAILURE);
+        return 1; 
     }
-
-    printf("%s:\n", dir);
 
     while ((d = readdir(dp)) != NULL)
     {
-        if (!show_hidden && d->d_name[0] == '.')
-        {
+     
+        if (!option_a && d->d_name[0] == '.')
             continue;
-        }
 
         sprintf(path, "%s/%s", dir, d->d_name);
-
         if (lstat(path, &st) < 0)
         {
             perror(path);
         }
         else
         {
-            if (show_details)
+            if (option_p)
             {
-                printStat(path, d->d_name, &st, show_permissions, show_inode, show_quoted);
+                printFullPath(dir, d->d_name, option_p);
             }
             else
             {
-                printf("%s\n", show_quoted ? quoteIfNeeded(d->d_name, 1) : d->d_name);
-            }
-
-            if (recursive && S_ISDIR(st.st_mode) && strcmp(d->d_name, ".") != 0 && strcmp(d->d_name, "..") != 0)
-            {
-                listDir(path, show_hidden, show_details, recursive, show_permissions, show_inode, show_quoted);
+                printStat(path, d->d_name, &st, option_l, option_i, option_Q, option_p);
             }
         }
     }
 
     closedir(dp);
+    return 0;
 }
 
-void printStat(char *pathname, char *file, struct stat *st, int show_permissions, int show_inode, int show_quoted)
+void printStat(char *pathname, char *file, struct stat *st, int option_l, int option_i, int option_Q, int option_p)
 {
-    if (show_inode)
+    if (option_l)
     {
-        printf("%lu ", st->st_ino);
+        printf("%5d ", st->st_blocks);
+        printf("%c%s ", type(st->st_mode), perm(st->st_mode));
+        printf("%3d ", st->st_nlink);
+
+        // Check if getpwuid or getgrgid returns NULL
+        struct passwd *pwd = getpwuid(st->st_uid);
+        struct group *grp = getgrgid(st->st_gid);
+        if (pwd != NULL)
+        {
+            printf("%s ", pwd->pw_name);
+        }
+        else
+        {
+            perror("getpwuid");
+        }
+
+        if (grp != NULL)
+        {
+            printf("%s ", grp->gr_name);
+        }
+        else
+        {
+            perror("getgrgid");
+        }
+
+        printf("%9d ", st->st_size);
+        printf("%.12s ", ctime(&st->st_mtime) + 4);
     }
 
-    printf("%s ", show_quoted ? quoteIfNeeded(file, 1) : file);
-
-    if (show_permissions)
+    if (option_i)
     {
-        printf("%s ", perm(st->st_mode));
+        printf("%ld ", (long)st->st_ino);
     }
 
-    printf("%5d ", st->st_blocks);
-    printf("%c%s ", type(st->st_mode), perm(st->st_mode));
-    printf("%3d ", st->st_nlink);
-    printf("%s %s ", getpwuid(st->st_uid)->pw_name, getgrgid(st->st_gid)->gr_name);
-    printf("%9d ", st->st_size);
-    printf("%.12s ", ctime(&st->st_mtime) + 4);
-    printf("\n");
+    if (option_Q)
+    {
+        printf("\"%s\"", file);
+    }
+    else
+    {
+        printf("%s", file);
+    }
+
+    if (option_p && S_ISDIR(st->st_mode))
+    {
+        printf("/");
+    }
+
+    if (!option_l) 
+    {
+        printf("\n");
+    }
+}
+
+void printFullPath(char *dir, char *file, int option_p)
+{
+    char fullpath[BUFSIZ + 1];
+    sprintf(fullpath, "%s/%s", dir, file);
+
+    if (option_p)
+    {
+        struct stat st;
+        if (stat(fullpath, &st) == 0)
+        {
+            if (S_ISDIR(st.st_mode))
+            {
+                printf("%s/\n", fullpath);
+                return;
+            }
+        }
+    }
+
+    printf("%s\n", fullpath);
 }
 
 char type(mode_t mode)
 {
     if (S_ISREG(mode))
-        return('-');
+        return '-';
     if (S_ISDIR(mode))
-        return('d');
+        return 'd';
     if (S_ISCHR(mode))
-        return('c');
+        return 'c';
     if (S_ISBLK(mode))
-        return('b');
+        return 'b';
     if (S_ISLNK(mode))
-        return('l');
+        return 'l';
     if (S_ISFIFO(mode))
-        return('p');
+        return 'p';
     if (S_ISSOCK(mode))
-        return('s');
+        return 's';
+    return '?';
 }
 
 char *perm(mode_t mode)
@@ -168,17 +209,8 @@ char *perm(mode_t mode)
     return (perms);
 }
 
-char *quoteIfNeeded(char *str, int show_quoted)
+int main(int argc, char **argv)
 {
-    static char quoted_str[BUFSIZ + 3]; // 큰따옴표로 둘러싸인 문자열의 최대 길이는 BUFSIZ + 2
-    if (show_quoted)
-    {
-        snprintf(quoted_str, sizeof(quoted_str), "\"%s\"", str);
-        return quoted_str;
-    }
-    else
-    {
-        return str;
-    }
+    return myls_main(argc, argv);
 }
 
